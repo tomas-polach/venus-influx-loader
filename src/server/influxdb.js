@@ -87,7 +87,7 @@ InfluxDB.prototype.connect = function () {
   //     })
   // })
 
-  return this.client
+  return Promise.resolve(this.client)
 }
 
 InfluxDB.prototype.store = function (
