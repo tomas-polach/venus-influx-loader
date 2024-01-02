@@ -54,6 +54,24 @@ InfluxDB.prototype.connect = function () {
   this.client = new InfluxDBClient({
     url: url,
     token: token,
+  }).getWriteApi(this.org, this.bucket, 'ns', {
+    // todo: add these to configs
+    /** max number of records/lines to send in a batch   */
+    batchSize: 1000,
+    /** delay between data flushes in milliseconds, at most `batch size` records are sent during flush  */
+    flushInterval: 2000,
+    // /** default tags, unescaped */
+    // defaultTags?: Record<string, string>;
+    // /** HTTP headers that will be sent with every write request */
+    // headers?: {
+    //     [key: string]: string;
+    //   };
+    //   /** When specified, write bodies larger than the threshold are gzipped  */
+    //   gzipThreshold?: number;
+    //   /** max size of a batch in bytes */
+    //   maxBatchBytes: number;
+    // /** InfluxDB Enterprise write consistency as explained in https://docs.influxdata.com/enterprise_influxdb/v1.9/concepts/clustering/#write-consistency */
+    // consistency?: 'any' | 'one' | 'quorum' | 'all';
   })
 
   // todo: create bucket if needed
@@ -112,26 +130,6 @@ InfluxDB.prototype.store = function (
     return
   }
 
-  // todo: add to configs
-  const writeApi = this.client.getWriteApi(this.org, this.bucket, 'ns', {
-    /** max number of records/lines to send in a batch   */
-    batchSize: 5000,
-    /** delay between data flushes in milliseconds, at most `batch size` records are sent during flush  */
-    flushInterval: 2000,
-    // /** default tags, unescaped */
-    // defaultTags?: Record<string, string>;
-    // /** HTTP headers that will be sent with every write request */
-    // headers?: {
-    //     [key: string]: string;
-    //   };
-    //   /** When specified, write bodies larger than the threshold are gzipped  */
-    //   gzipThreshold?: number;
-    //   /** max size of a batch in bytes */
-    //   maxBatchBytes: number;
-    // /** InfluxDB Enterprise write consistency as explained in https://docs.influxdata.com/enterprise_influxdb/v1.9/concepts/clustering/#write-consistency */
-    // consistency?: 'any' | 'one' | 'quorum' | 'all';
-  })
-
   const p = new Point(measurement)
     .tag('portalId', portalId)
     .tag('instanceNumber', instanceNumber)
@@ -143,7 +141,7 @@ InfluxDB.prototype.store = function (
     p.stringField('stringValue', value)
   }
 
-  writeApi.writePoint(p)
+  this.client.writePoint(p)
 }
 
 module.exports = InfluxDB
