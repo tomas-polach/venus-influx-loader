@@ -112,7 +112,25 @@ InfluxDB.prototype.store = function (
     return
   }
 
-  const writeApi = this.client.getWriteApi(this.org, this.bucket, 'ns')
+  // todo: add to configs
+  const writeApi = this.client.getWriteApi(this.org, this.bucket, 'ns', {
+    /** max number of records/lines to send in a batch   */
+    batchSize: 5000,
+    /** delay between data flushes in milliseconds, at most `batch size` records are sent during flush  */
+    flushInterval: 2000,
+    // /** default tags, unescaped */
+    // defaultTags?: Record<string, string>;
+    // /** HTTP headers that will be sent with every write request */
+    // headers?: {
+    //     [key: string]: string;
+    //   };
+    //   /** When specified, write bodies larger than the threshold are gzipped  */
+    //   gzipThreshold?: number;
+    //   /** max size of a batch in bytes */
+    //   maxBatchBytes: number;
+    // /** InfluxDB Enterprise write consistency as explained in https://docs.influxdata.com/enterprise_influxdb/v1.9/concepts/clustering/#write-consistency */
+    // consistency?: 'any' | 'one' | 'quorum' | 'all';
+  })
 
   const p = new Point(measurement)
     .tag('portalId', portalId)
@@ -120,7 +138,7 @@ InfluxDB.prototype.store = function (
     .tag('name', name || portalId)
 
   if (typeof value === 'number') {
-    p.floatField('value', 20 + Math.round(100 * Math.random()) / 10)
+    p.floatField('value', value)
   } else if (typeof value === 'string') {
     p.stringField('stringValue', value)
   }
