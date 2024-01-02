@@ -1,0 +1,23 @@
+{
+  "upnp": {
+    "enabled": true,
+    "enabledPortalIds": []
+  },
+  "vrm": {
+    "enabled": false,
+    "enabledPortalIds": ["___YOUR_PORTAL_ID__HERE___"]
+  },
+  "manual": {
+    "enabled": true,
+    "hosts": [{
+      "enabled": true,
+      "hostName": "192.168.1.11"
+    }]
+  },
+  "influxdb": {
+    "host": "localhost",
+    "port": "8086",
+    "token": "___YOUR_TOKEN_HERE___",
+    "bucket": "victron"
+  }
+}
