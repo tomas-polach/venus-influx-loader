@@ -1,4 +1,4 @@
-const Influx = require('influx')
+const { InfluxDB: InfluxDBClient, Point } = require('@influxdata/influxdb-client')
 const _ = require('lodash')
 const debug = require('debug')('venus-server:influxdb')
 
@@ -8,150 +8,85 @@ function InfluxDB (app) {
   this.debug = this.logger.debug.bind(this.logger)
   this.info = this.logger.info.bind(this.logger)
   this.error = this.logger.error.bind(this.logger)
-  this.connected = false
-
-  this.accumulatedPoints = []
-  this.lastWriteTime = Date.now()
-  this.batchWriteInterval =
-    (_.isUndefined(app.config.settings.influxdb.batchWriteInterval)
-      ? 10
-      : app.config.settings.influxdb.batchWriteInterval) * 1000
 
   app.on('settingsChanged', settings => {
-    this.batchWriteInterval =
-      (_.isUndefined(app.config.settings.influxdb.batchWriteInterval)
-        ? 10
-        : app.config.settings.influxdb.batchWriteInterval) * 1000
-
-    if (!this.connected) {
-      return
-    }
-
     const {
-      host,
-      port,
-      database,
+      url,
+      token,
+      org,
+      bucket,
       retention,
-      username,
-      password
+      // todo: consider batch write interval
+      // batchWriteInterval
     } = settings.influxdb
 
     if (
-      this.host !== host ||
-      this.port !== port ||
-      this.database !== database ||
-      this.username !== username ||
-      this.password !== password
+      this.url !== url ||
+      this.token !== token ||
+      this.org !== org ||
+      this.bucket !== bucket
     ) {
-      this.connected = false
-      this.connect()
-        .then(() => {})
-        .catch(err => {
-          this.logger.error(err)
-          const interval = setInterval(() => {
-            app.influxdb
-              .connect()
-              .then(() => {
-                clearInterval(interval)
-              })
-              .catch(err => {
-                this.logger.error(err)
-              })
-          }, 5000)
-        })
-    } else if (!_.isUndefined(this.retention) && retention !== this.retention) {
-      this.client.then(client => {
-        this.setRetentionPolicy(client, retention)
-      })
+      // todo: update client
     }
   })
 }
 
 InfluxDB.prototype.setRetentionPolicy = function (client, retention) {
-  const opts = {
-    duration: retention,
-    replication: 1,
-    isDefault: true
-  }
-  return new Promise((resolve, reject) => {
-    client
-      .createRetentionPolicy('venus_default', opts)
-      .then(() => {
-        this.logger.info(`Set retention policy to ${retention}`)
-        this.retention = retention
-        resolve()
-      })
-      .catch(err => {
-        client
-          .alterRetentionPolicy('venus_default', opts)
-          .then(() => {
-            this.retention = retention
-            this.logger.info(`Set retention policy to ${retention}`)
-            resolve()
-          })
-          .catch(reject)
-      })
-  })
+  // todo: implement retention policy
+  return new Promise().resolve();
 }
 
 InfluxDB.prototype.connect = function () {
   const {
-    host,
-    port,
-    database,
+    url,
+    token,
+    org,
+    bucket,
     retention,
-    username,
-    password
   } = this.app.config.settings.influxdb
-  this.host = host
-  this.port = port
-  this.database = database
-  this.username = username !== '' ? username : 'root'
-  this.password = password !== '' ? password : 'root'
+  this.url = url
+  this.token = token
+  this.org = org
+  this.bucket = bucket
   this.info(
-    `Attempting connection to ${host}:${port}/${database} using ${this.username}:*****`
+    `Attempting connection to ${url}/${bucket} using token ${this.token.substring(0, 6)}...`
   )
-  this.client = new Promise((resolve, reject) => {
-    const client = new Influx.InfluxDB({
-      host: host,
-      port: port,
-      protocol: 'http',
-      database: database,
-      username: username,
-      password: password
-    })
-
-    this.connected = true
-
-    client
-      .getDatabaseNames()
-      .then(names => {
-        this.info('Connected')
-        if (names.includes(database)) {
-          this.setRetentionPolicy(client, retention)
-            .then(() => {
-              resolve(client)
-            })
-            .catch(reject => {
-              this.error(`Unable to set retention policy: ${reject}`)
-            })
-        } else {
-          client.createDatabase(database).then(result => {
-            this.info('Created InfluxDb database ' + database)
-            this.setRetentionPolicy(client, retention)
-              .then(() => {
-                resolve(client)
-              })
-              .catch(reject => {
-                this.error(`Unable to create database ${database}: ${reject}`)
-              })
-          })
-        }
-      })
-      .catch(reject => {
-        this.error(`Unable to connect: ${reject}`)
-      })
+  this.client = new InfluxDBClient({
+    url: url,
+    token: token,
   })
+
+  // todo: create bucket if needed
+  //   client
+  //     .getDatabaseNames()
+  //     .then(names => {
+  //       this.info('Connected')
+  //       if (names.includes(bucket)) {
+  //         this.setRetentionPolicy(client, retention)
+  //           .then(() => {
+  //             resolve(client)
+  //           })
+  //           .catch(reject => {
+  //             this.error(`Unable to set retention policy: ${reject}`)
+  //           })
+  //       } else {
+  //         client.createDatabase(bucket).then(result => {
+  //           this.info('Created InfluxDb bucket ' + bucket)
+  //           this.setRetentionPolicy(client, retention)
+  //             .then(() => {
+  //               resolve(client)
+  //             })
+  //             .catch(reject => {
+  //               this.error(`Unable to create bucket ${bucket}: ${reject}`)
+  //             })
+  //         })
+  //       }
+  //     })
+  //     .catch(reject => {
+  //       this.error(`Unable to connect: ${reject}`)
+  //     })
+  // })
+
   return this.client
 }
 
@@ -162,56 +97,35 @@ InfluxDB.prototype.store = function (
   measurement,
   value
 ) {
-  if (this.connected === false || _.isUndefined(value) || value === null) {
+  if (!this.client || _.isUndefined(value) || value === null) {
+    // nothing to write
     return
   }
 
-  let valueKey = 'value'
-  if (typeof value === 'string') {
-    if (value.length === 0) {
-      //influxdb won't allow empty strings
-      return
-    }
-    valueKey = 'stringValue'
-  } else if (typeof value !== 'number') {
+  if (typeof value !== 'number' && typeof value !== 'string') {
+    // ignore values other than numbers and strings
     return
   }
 
-  const point = {
-    timestamp: new Date(),
-    measurement: measurement,
-    tags: {
-      portalId: portalId,
-      instanceNumber: instanceNumber,
-      name: name || portalId
-    },
-    fields: {
-      [valueKey]: value
-    }
+  if (typeof value === 'string' && value.length === 0) {
+    //influxdb won't allow empty strings
+    return
   }
 
-  this.accumulatedPoints.push(point)
-  const now = Date.now()
-  if (
-    this.batchWriteInterval === 0 ||
-    now - this.lastWriteTime > this.batchWriteInterval
-  ) {
-    this.lastWriteTime = now
+  const writeApi = this.client.getWriteApi(this.org, this.bucket, 'ns')
 
-    this.client
-      .then(client => {
-        client.writePoints(this.accumulatedPoints).catch(err => {
-          //this.app.emit('error', err)
-          this.debug(err)
-        })
-        this.accumulatedPoints = []
-      })
-      .catch(error => {
-        //this.app.emit('error', error)
-        this.debug(error)
-        this.accumulatedPoints = []
-      })
+  const p = new Point(measurement)
+    .tag('portalId', portalId)
+    .tag('instanceNumber', instanceNumber)
+    .tag('name', name || portalId)
+
+  if (typeof value === 'number') {
+    p.floatField('value', 20 + Math.round(100 * Math.random()) / 10)
+  } else if (typeof value === 'string') {
+    p.stringField('stringValue', value)
   }
+
+  writeApi.writePoint(p)
 }
 
 module.exports = InfluxDB

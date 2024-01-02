@@ -52,6 +52,7 @@
     "dist"
   ],
   "dependencies": {
+    "@influxdata/influxdb-client": "^1.33.2",
     "axios": "^1.6.2",
     "basic-auth": "^2.0.1",
     "body-parser": "^1.20.2",
